@@ -1,0 +1,16 @@
+server:
+  port: 8080
+
+spring:
+  profiles:
+    active: openai
+
+app:
+  openai:
+    api-base: https://api.openai.com/v1
+    chat-model: gpt-4o-mini
+    embed-model: text-embedding-3-small
+    api-key: ${OPENAI_API_KEY:}
+  ollama:
+    api-base: http://localhost:11434
+    chat-model: llama3.1
