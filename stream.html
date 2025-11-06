@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h3>Chat Stream</h3>
+<pre id="out"></pre>
+<script>
+    const out = document.getElementById('out');
+
+    fetch('http://localhost:8080/api/chat/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream' // tell server we expect SSE
+      },
+      body: JSON.stringify({ prompt: 'Give me a haiku about Spring Boot' })
+    })
+    .then(response => {
+      if (!response.body) {
+        out.textContent += '\n(no response body; check CORS / networking)\n';
+        return;
+      }
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+
+      function pump() {
+        reader.read().then(({ done, value }) => {
+          if (done) return;
+          buffer += decoder.decode(value, { stream: true });
+
+          // SSE frames are separated by blank lines.
+          // Each frame typically contains lines like: "data: {...}\n"
+          const frames = buffer.split('\n\n');
+          buffer = frames.pop(); // keep partial frame
+
+          frames.forEach(frame => {
+            frame.split('\n').forEach(line => {
+              if (line.startsWith('data:')) {
+                const data = line.slice(5).trim();
+                if (data && data !== '[DONE]') {
+                  // our server emits plain content strings; append directly
+                  out.textContent += data;
+                }
+              }
+            });
+          });
+
+          pump();
+        });
+      }
+
+      pump();
+    })
+    .catch(err => {
+      out.textContent += '\nError: ' + (err && err.message ? err.message : err) + '\n';
+    });
+</script>
+</body>
+</html>

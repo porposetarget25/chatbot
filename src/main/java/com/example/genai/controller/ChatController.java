@@ -46,6 +46,7 @@ public class ChatController {
         }
     }
 
+    @CrossOrigin(origins = "*")
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> chatStream(@RequestBody ChatRequest req) {
         String system = Optional.ofNullable(req.system()).orElse("You are a helpful Java assistant.");
