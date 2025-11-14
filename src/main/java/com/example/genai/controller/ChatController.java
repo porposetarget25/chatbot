@@ -27,26 +27,26 @@ public class ChatController {
     public ChatController(ApplicationContext ctx) { this.ctx = ctx; }
 
     @PostMapping("/chat")
-    public Mono<Map<String, Object>> chat(@RequestBody ChatRequest req) {
-        String system = Optional.ofNullable(req.system()).orElse("You are a helpful Java assistant.");
+    public Map<String, Object> chat(@RequestBody ChatRequest req) {
+        String system = Optional.ofNullable(req.system())
+                .orElse("You are a helpful Java assistant.");
         String user = req.prompt();
 
-        if (ctx.containsBean("openAIClient")) {
-            var client = ctx.getBean(OpenAIClient.class);
-            List<Map<String,String>> msgs = List.of(
-                    Map.of("role", "system", "content", system),
-                    Map.of("role", "user", "content", user)
-            );
-            return client.chatOnce(system, msgs)
-                    .map(content -> Map.of("answer", content));
-        } else {
-            var client = ctx.getBean(OllamaClient.class);
-            return client.chatOnce(system, user)
-                    .map(content -> Map.of("answer", content));
-        }
+        OpenAIClient client = ctx.getBean(OpenAIClient.class);
+        var msgs = List.of(
+                Map.of("role", "system", "content", system),
+                Map.of("role", "user", "content", user)
+        );
+
+        String answer = client.chatOnce(system, msgs)
+                .block(); // OK for your batch / basic use case
+
+        return Map.of("answer", answer);
     }
 
-    @CrossOrigin(origins = "*")
+
+
+    /*@CrossOrigin(origins = "*")
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> chatStream(@RequestBody ChatRequest req) {
         String system = Optional.ofNullable(req.system()).orElse("You are a helpful Java assistant.");
@@ -97,7 +97,7 @@ public class ChatController {
             });
         }
         return Mono.just(Map.of("answer","Embeddings not wired for this profile"));
-    }
+    }*/
 
     public record ChatRequest(@NotBlank String prompt, String system) {}
     public record RagUpsert(@NotBlank String id, @NotBlank String text) {}
