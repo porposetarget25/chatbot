@@ -42,7 +42,7 @@ public class OpenAIClient {
         System.out.println("Using WebClient bean: " + http);
     }
 
-    /*public Mono<String> chatOnce(String system, List<Map<String, String>> messages) {
+    public Mono<String> chatOnce(String system, List<Map<String, String>> messages) {
         var payload = Map.of(
                 "model", chatModel,
                 "messages", messages,
@@ -56,10 +56,13 @@ public class OpenAIClient {
                 .retrieve()
                 .bodyToMono(Map.class)
                 .map(res -> ((Map)((List) res.get("choices")).get(0)).get("message"))
-                .map(msg -> (String) ((Map) msg).get("content"));
-    }*/
+                .map(msg -> {
+                    String content = (String) ((Map) msg).get("content");
+                    return content == null ? "" : content;
+                }).map(content -> content.replaceAll("\\s*\\R+\\s*", " ").trim());
+    }
 
-    public Mono<String> chatOnce(String system, List<Map<String, String>> messages) {
+    /*public Mono<String> chatOnce(String system, List<Map<String, String>> messages) {
         var msgList = new java.util.ArrayList<Map<String, String>>(
                 messages == null ? java.util.List.of() : messages
         );
@@ -146,7 +149,7 @@ public class OpenAIClient {
                 })
 
                 .defaultIfEmpty("");
-    }
+    }*/
 
     private static int asInt(Object v) {
         return (v instanceof Number n) ? n.intValue() : 0;
