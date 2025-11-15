@@ -1,38 +1,46 @@
 package com.example.genai.entity;
 
 import jakarta.persistence.*;
-
 import java.time.Instant;
 
 @Entity
 @Table(
         name = "response",
-        uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"spot_id","language_id","prompt_key"})
-        }
+        uniqueConstraints = @UniqueConstraint(columnNames = {"spot_id", "language_id", "template_key"})
 )
 public class Response {
-    @Id @GeneratedValue(strategy=GenerationType.IDENTITY) Long id;
 
-    @ManyToOne(optional=false, fetch=FetchType.LAZY) Spot spot;
-    @ManyToOne(optional=false, fetch=FetchType.LAZY) Language language;
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
-    @Column(name = "prompt_key", nullable = false, length = 64)
-    private String promptKey;  // "Text1"/"Text2"/"Text3"
-    @Lob @Column(nullable=false) String content;
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
+    @JoinColumn(name = "spot_id", nullable = false)
+    private Spot spot;
 
-    String model;
-    Integer tokensIn;
-    Integer tokensOut;
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
+    @JoinColumn(name = "language_id", nullable = false)
+    private Language language;
 
-    @Column(nullable=false)
-    Instant createdAt = Instant.now();
+    @Column(name = "template_key", nullable = false, length = 100)
+    private String templateKey; // e.g. "TRAVEL_DESC_V1"
 
-    public Response(Long id, Spot spot, Language language, String promptKey, String content, String model, Integer tokensIn, Integer tokensOut, Instant createdAt) {
+    @Lob
+    @Column(nullable = false)
+    private String content;     // LLM response
+
+    private String model;
+    private Integer tokensIn;
+    private Integer tokensOut;
+
+    @Column(nullable = false)
+    private Instant createdAt = Instant.now();
+
+    public Response(Long id, Spot spot, Language language, String templateKey, String content, String model, Integer tokensIn, Integer tokensOut, Instant createdAt) {
         this.id = id;
         this.spot = spot;
         this.language = language;
-        this.promptKey = promptKey;
+        this.templateKey = templateKey;
         this.content = content;
         this.model = model;
         this.tokensIn = tokensIn;
@@ -68,12 +76,12 @@ public class Response {
         this.language = language;
     }
 
-    public String getPromptKey() {
-        return promptKey;
+    public String getTemplateKey() {
+        return templateKey;
     }
 
-    public void setPromptKey(String promptKey) {
-        this.promptKey = promptKey;
+    public void setTemplateKey(String templateKey) {
+        this.templateKey = templateKey;
     }
 
     public String getContent() {

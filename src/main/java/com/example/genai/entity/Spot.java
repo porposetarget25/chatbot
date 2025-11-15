@@ -1,11 +1,24 @@
 package com.example.genai.entity;
+
 import jakarta.persistence.*;
 
-@Entity @Table(name="spot", uniqueConstraints=@UniqueConstraint(columnNames={"city_id","name"}))
+@Entity
+@Table(
+        name = "spot",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"city_id", "name"})
+)
 public class Spot {
-    @Id @GeneratedValue(strategy=GenerationType.IDENTITY) Long id;
-    @ManyToOne(optional=false, fetch=FetchType.LAZY) City city;
-    @Column(nullable=false) String name;
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
+    @JoinColumn(name = "city_id", nullable = false)
+    private City city;
+
+    @Column(nullable = false)
+    private String name; // This is your {spot}
 
     public Spot(Long id, City city, String name) {
         this.id = id;

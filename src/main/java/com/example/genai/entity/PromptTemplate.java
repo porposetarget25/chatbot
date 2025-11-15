@@ -1,13 +1,18 @@
 package com.example.genai.entity;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Lob;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 @Entity
 @Table(
         name = "prompt_template",
-        uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"spot_id", "prompt_key"})
-        }
+        uniqueConstraints = @UniqueConstraint(columnNames = "prompt_key")
 )
 public class PromptTemplate {
 
@@ -15,36 +20,29 @@ public class PromptTemplate {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(optional = false, fetch = FetchType.LAZY)
-    @JoinColumn(name = "spot_id", nullable = false)
-    private Spot spot;
-
-    @Column(name = "prompt_key", nullable = false, length = 64)
-    private String promptKey;          // was: key
+    // Property name can still be "key", but column name must NOT be "key"
+    @Column(name = "prompt_key", nullable = false, unique = true, length = 100)
+    private String key;
 
     @Lob
     @Column(name = "prompt_text", nullable = false)
-    private String text;               // was: text (column)
+    private String text;
 
     public PromptTemplate() {}
 
-    public PromptTemplate(Long id, Spot spot, String promptKey, String text) {
+    public PromptTemplate(Long id, String key, String text) {
         this.id = id;
-        this.spot = spot;
-        this.promptKey = promptKey;
+        this.key = key;
         this.text = text;
     }
 
-    // Getters & setters
+    // getters & setters
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
-    public Spot getSpot() { return spot; }
-    public void setSpot(Spot spot) { this.spot = spot; }
-
-    public String getPromptKey() { return promptKey; }
-    public void setPromptKey(String promptKey) { this.promptKey = promptKey; }
+    public String getKey() { return key; }
+    public void setKey(String key) { this.key = key; }
 
     public String getText() { return text; }
     public void setText(String text) { this.text = text; }
