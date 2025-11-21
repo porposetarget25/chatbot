@@ -78,8 +78,6 @@ public class TravelGenerationService {
                 int promptTokens = result.getPromptTokens();
                 int completionTokens = result.getCompletionTokens();
 
-
-                // Save to DB
                 Response r = new Response();
                 r.setSpot(spot);
                 r.setLanguage(language);
@@ -87,8 +85,13 @@ public class TravelGenerationService {
                 r.setContent(content);
                 r.setModel("gpt-4o-mini");
 
+               // ✅ TEXT tokens
                 r.setTokensIn(promptTokens);
                 r.setTokensOut(completionTokens);
+
+                // ❌ DO NOT touch audio tokens here
+                // r.setAudioTokensIn(...);
+                // r.setAudioTokensOut(...);
 
                 r.setCreatedAt(Instant.now());
 

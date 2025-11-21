@@ -27,16 +27,40 @@ public class Response {
 
     @Lob
     @Column(nullable = false)
-    private String content;     // LLM response
+    private String content;     // LLM response (text)
 
+    // Model used for text generation (e.g. gpt-4o-mini)
     private String model;
-    private Integer tokensIn;
-    private Integer tokensOut;
+
+    // ✅ TEXT token usage
+    // Treat these as "text input tokens" and "text output tokens"
+    @Column(name = "text_tokens_in")
+    private Integer tokensIn;   // prompt tokens for text
+
+    @Column(name = "text_tokens_out")
+    private Integer tokensOut;  // completion tokens for text
+
+    // ✅ AUDIO token usage (for TTS)
+    @Column(name = "audio_tokens_in")
+    private Integer audioTokensIn;   // prompt tokens (or chars count) for audio
+
+    @Column(name = "audio_tokens_out")
+    private Integer audioTokensOut;  // completion tokens for audio (if available)
 
     @Column(nullable = false)
     private Instant createdAt = Instant.now();
 
-    public Response(Long id, Spot spot, Language language, String templateKey, String content, String model, Integer tokensIn, Integer tokensOut, Instant createdAt) {
+    public Response(Long id,
+                    Spot spot,
+                    Language language,
+                    String templateKey,
+                    String content,
+                    String model,
+                    Integer tokensIn,
+                    Integer tokensOut,
+                    Integer audioTokensIn,
+                    Integer audioTokensOut,
+                    Instant createdAt) {
         this.id = id;
         this.spot = spot;
         this.language = language;
@@ -45,12 +69,15 @@ public class Response {
         this.model = model;
         this.tokensIn = tokensIn;
         this.tokensOut = tokensOut;
+        this.audioTokensIn = audioTokensIn;
+        this.audioTokensOut = audioTokensOut;
         this.createdAt = createdAt;
     }
 
     public Response() {
-
     }
+
+    // --- getters & setters ---
 
     public Long getId() {
         return id;
@@ -100,6 +127,7 @@ public class Response {
         this.model = model;
     }
 
+    // TEXT tokens
     public Integer getTokensIn() {
         return tokensIn;
     }
@@ -114,6 +142,23 @@ public class Response {
 
     public void setTokensOut(Integer tokensOut) {
         this.tokensOut = tokensOut;
+    }
+
+    // AUDIO tokens
+    public Integer getAudioTokensIn() {
+        return audioTokensIn;
+    }
+
+    public void setAudioTokensIn(Integer audioTokensIn) {
+        this.audioTokensIn = audioTokensIn;
+    }
+
+    public Integer getAudioTokensOut() {
+        return audioTokensOut;
+    }
+
+    public void setAudioTokensOut(Integer audioTokensOut) {
+        this.audioTokensOut = audioTokensOut;
     }
 
     public Instant getCreatedAt() {

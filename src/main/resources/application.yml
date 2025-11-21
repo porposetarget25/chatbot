@@ -4,6 +4,8 @@ server:
 spring:
   profiles:
     active: openai
+  codec:
+    max-in-memory-size: 10MB
 
   main:
     web-application-type: servlet
