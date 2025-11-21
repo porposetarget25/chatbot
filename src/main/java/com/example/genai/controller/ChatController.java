@@ -1,5 +1,6 @@
 package com.example.genai.controller;
 
+import com.example.genai.llm.LLMResult;
 import com.example.genai.llm.OpenAIClient;
 import com.example.genai.llm.OllamaClient;
 import com.example.genai.rag.EmbeddingStore;
@@ -38,10 +39,10 @@ public class ChatController {
                 Map.of("role", "user", "content", user)
         );
 
-        String answer = client.chatOnce(system, msgs)
+        LLMResult answer = client.chatOnce(system, msgs)
                 .block(); // OK for your batch / basic use case
 
-        return Map.of("answer", answer);
+        return Map.of("answer", answer.getContent());
     }
 
 

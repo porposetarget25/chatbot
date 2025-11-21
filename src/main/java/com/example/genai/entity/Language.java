@@ -13,6 +13,9 @@ public class Language {
         this.name = name;
     }
 
+    public Language() {
+    }
+
     public Long getId() {
         return id;
     }

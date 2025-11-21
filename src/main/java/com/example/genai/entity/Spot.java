@@ -26,6 +26,9 @@ public class Spot {
         this.name = name;
     }
 
+    public Spot() {
+    }
+
     public Long getId() {
         return id;
     }

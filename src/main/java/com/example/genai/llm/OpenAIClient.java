@@ -42,7 +42,7 @@ public class OpenAIClient {
         System.out.println("Using WebClient bean: " + http);
     }
 
-    public Mono<String> chatOnce(String system, List<Map<String, String>> messages) {
+    /*public Mono<String> chatOnce(String system, List<Map<String, String>> messages) {
         var payload = Map.of(
                 "model", chatModel,
                 "messages", messages,
@@ -60,9 +60,10 @@ public class OpenAIClient {
                     String content = (String) ((Map) msg).get("content");
                     return content == null ? "" : content;
                 }).map(content -> content.replaceAll("\\s*\\R+\\s*", " ").trim());
-    }
+    }*/
 
-    /*public Mono<String> chatOnce(String system, List<Map<String, String>> messages) {
+    public Mono<LLMResult> chatOnce(String system, List<Map<String, String>> messages) {
+
         var msgList = new java.util.ArrayList<Map<String, String>>(
                 messages == null ? java.util.List.of() : messages
         );
@@ -82,74 +83,44 @@ public class OpenAIClient {
                 .headers(h -> h.setBearerAuth(apiKey))
                 .bodyValue(payload)
                 .retrieve()
-                .onStatus(status -> status.isError(), response ->
-                        response.bodyToMono(String.class)
-                                .defaultIfEmpty("")
-                                .flatMap(body -> Mono.error(new WebClientResponseException(
-                                        "OpenAI API error: HTTP " + response.statusCode().value()
-                                                + (body.isBlank() ? "" : " - " + body),
-                                        response.statusCode().value(), // Spring 6+ safe
-                                        null, // no reason phrase on HttpStatusCode
-                                        null, null, null
-                                )))
-                )
-                .bodyToMono(new ParameterizedTypeReference<java.util.Map<String, Object>>() {})
-                //  Log token usage when present, but keep the return type Mono<String>
-                .doOnNext(res -> {
-                    Object usageObj = res.get("usage");
-                    if (usageObj instanceof Map<?, ?>) {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> u = (Map<String, Object>) usageObj;
-
-                        int prompt     = asInt(u.get("prompt_tokens"));
-                        int completion = asInt(u.get("completion_tokens"));
-                        int total      = asInt(u.get("total_tokens"));
-
-                        Object model = res.get("model");
-                        System.out.println("OpenAI usage — input tokens=" + prompt + ", response tokens=" + completion + ", total tokens=" + total);
-
-                    }
-                })
+                .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
                 .map(res -> {
-                    // If API returns: { "error": { "message": "..." } }
-                    Object err = res.get("error");
-                    if (err instanceof Map<?, ?> em) {
-                        Object emsg = em.get("message");
-                        if (emsg != null) {
-                            throw new RuntimeException("OpenAI error: " + emsg);
-                        }
+
+                    // Extract tokens
+                    int promptTokens = safeInt("prompt_tokens");
+                    int completionTokens = safeInt("completion_tokens");
+
+                    Object usageObj = res.get("usage");
+                    if (usageObj instanceof Map<?, ?> usage) {
+                        promptTokens = safeInt(usage.get("prompt_tokens"));
+                        completionTokens = safeInt(usage.get("completion_tokens"));
                     }
 
+                    // Extract content
                     Object choicesObj = res.get("choices");
                     if (!(choicesObj instanceof List<?> choices) || choices.isEmpty()) {
-                        return "";
+                        return new LLMResult("", promptTokens, completionTokens);
                     }
 
                     Object first = choices.get(0);
                     if (!(first instanceof Map<?, ?> firstMap)) {
-                        return "";
+                        return new LLMResult("", promptTokens, completionTokens);
                     }
 
                     Object messageObj = firstMap.get("message");
+                    String content = "";
+
                     if (messageObj instanceof Map<?, ?> msgMap) {
-                        Object content = msgMap.get("content");
-                        // 🔹 Clean formatting: remove double newlines and trim
-                        return content == null
-                                ? ""
-                                : content.toString()
-                                .replaceAll("\\s*\\n+\\s*", " ") // convert newlines to spaces
-                                .trim();
+                        Object c = msgMap.get("content");
+                        content = c == null ? "" : c.toString();
                     }
 
-                    // Fallback for providers returning 'text'
-                    Object text = firstMap.get("text");
-                    return text == null ? "" : text.toString()
-                            .replaceAll("\\s*\\n+\\s*", " ")
-                            .trim();
-                })
+                    content = content.replaceAll("\\s*\\n+\\s*", " ").trim();
 
-                .defaultIfEmpty("");
-    }*/
+                    return new LLMResult(content, promptTokens, completionTokens);
+                });
+    }
+
 
     private static int asInt(Object v) {
         return (v instanceof Number n) ? n.intValue() : 0;
@@ -216,4 +187,24 @@ public class OpenAIClient {
                 .jitter(0.5) // +/- 50% jitter
                 .onRetryExhaustedThrow((spec, signal) -> signal.failure());
     }
+
+    private int safeInt(Object value) {
+        if (value == null) return 0;
+
+        // Already a number?
+        if (value instanceof Number num) {
+            return num.intValue();
+        }
+
+        // Sometimes API returns string values
+        if (value instanceof String s) {
+            try {
+                return Integer.parseInt(s.trim());
+            } catch (NumberFormatException ignored) {}
+        }
+
+        // Default fallback
+        return 0;
+    }
+
 }
