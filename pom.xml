@@ -83,6 +83,29 @@
             <artifactId>spring-boot-starter-tomcat</artifactId>
         </dependency>
 
+        <!-- Audio mix libraries -->
+        <!-- MP3 SPI wrapper -->
+        <dependency>
+            <groupId>com.googlecode.soundlibs</groupId>
+            <artifactId>mp3spi</artifactId>
+            <version>1.9.5.4</version>
+        </dependency>
+
+        <!-- Tritonus shared classes -->
+        <dependency>
+            <groupId>com.googlecode.soundlibs</groupId>
+            <artifactId>tritonus-share</artifactId>
+            <version>0.3.7.4</version>
+        </dependency>
+
+        <!-- JLayer (actual MP3 decoder) -->
+        <dependency>
+            <groupId>com.googlecode.soundlibs</groupId>
+            <artifactId>jlayer</artifactId>
+            <version>1.0.1.4</version>
+        </dependency>
+
+
     </dependencies>
 
     <build>

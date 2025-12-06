@@ -35,7 +35,8 @@ app:
     chat-model: gpt-4o-mini
     embed-model: text-embedding-3-small
     api-key: ${OPENAI_API_KEY:}
-
   ollama:
     api-base: http://localhost:11434
     chat-model: llama3.1
+  google:
+    api-key: ${GOOGLE_MAPS_API_KEY:}
