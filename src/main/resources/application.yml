@@ -40,3 +40,5 @@ app:
     chat-model: llama3.1
   google:
     api-key: ${GOOGLE_MAPS_API_KEY:}
+  pixabay:
+    api-key: 53590968-4d885133b419ce3d5a0e89ac3
