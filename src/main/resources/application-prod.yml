@@ -1,0 +1,26 @@
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/genai
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update       # or 'validate' in stricter prod
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+      hibernate.format_sql: true
+
+# S3 is prod-only (local can still use local disk if you want)
+app:
+  s3:
+    bucket: ${S3_BUCKET_NAME:world-traveler-bucket}
+    region: ${AWS_REGION:ap-southeast-2}
+    audio-prefix: audio/
+    photo-prefix: photos/

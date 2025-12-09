@@ -2,32 +2,18 @@ server:
   port: 8080
 
 spring:
-  profiles:
-    active: openai
   codec:
     max-in-memory-size: 10MB
 
   main:
     web-application-type: servlet
 
-  datasource:
-    url: jdbc:h2:mem:genai;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
-    username: sa
-    password:
-    driver-class-name: org.h2.Driver
-
-  jpa:
-    hibernate:
-      ddl-auto: update
-    open-in-view: false
-    properties:
-      hibernate.jdbc.time_zone: UTC
-      hibernate.format_sql: true
-
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
+  # Profile groups: when you run with "local", it will also enable "openai"
+  # Same for "prod".
+  profiles:
+    group:
+      local: local,openai
+      prod: prod,openai
 
 app:
   openai:
@@ -35,10 +21,13 @@ app:
     chat-model: gpt-4o-mini
     embed-model: text-embedding-3-small
     api-key: ${OPENAI_API_KEY:}
+
   ollama:
     api-base: http://localhost:11434
     chat-model: llama3.1
+
   google:
     api-key: ${GOOGLE_MAPS_API_KEY:}
+
   pixabay:
     api-key: 53590968-4d885133b419ce3d5a0e89ac3
