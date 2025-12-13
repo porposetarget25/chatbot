@@ -40,7 +40,7 @@ public class AudioGenerationService {
 
             String filename = r.getSpot().getName().replace(" ", "_")
                     + "_" + r.getLanguage().getName().replace(" ", "_")
-                    + ".mp3";
+                    + ".wav";
 
             Path file = outputDir.resolve(filename);
 

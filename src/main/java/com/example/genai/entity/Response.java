@@ -50,6 +50,10 @@ public class Response {
     @Column(nullable = false)
     private Instant createdAt = Instant.now();
 
+    // ✅ S3 key (path in bucket) for the mixed audio
+    @Column(length = 500)
+    private String audioS3Key;
+
     public Response(Long id,
                     Spot spot,
                     Language language,
@@ -60,7 +64,8 @@ public class Response {
                     Integer tokensOut,
                     Integer audioTokensIn,
                     Integer audioTokensOut,
-                    Instant createdAt) {
+                    Instant createdAt,
+                    String audioS3Key) {
         this.id = id;
         this.spot = spot;
         this.language = language;
@@ -72,6 +77,7 @@ public class Response {
         this.audioTokensIn = audioTokensIn;
         this.audioTokensOut = audioTokensOut;
         this.createdAt = createdAt;
+        this.audioS3Key = audioS3Key;
     }
 
     public Response() {
@@ -167,5 +173,13 @@ public class Response {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getAudioS3Key() {
+        return audioS3Key;
+    }
+
+    public void setAudioS3Key(String audioS3Key) {
+        this.audioS3Key = audioS3Key;
     }
 }

@@ -1,6 +1,15 @@
 server:
   port: 8080
 
+gemini:
+  apiKey: AIzaSyCrfkqXPUsSQoz0IiukLxtv3tn3uO4T3T0
+  ssl:
+    trustAll: true
+  tts:
+    voiceName: Leda
+  webclient:
+    maxInMemorySizeBytes: 20971520
+
 spring:
   codec:
     max-in-memory-size: 10MB
@@ -26,8 +35,13 @@ app:
     api-base: http://localhost:11434
     chat-model: llama3.1
 
+  s3:
+    bucket: http://localhost:11434
+    region: US
+
   google:
     api-key: ${GOOGLE_MAPS_API_KEY:}
+
 
   pixabay:
     api-key: 53590968-4d885133b419ce3d5a0e89ac3

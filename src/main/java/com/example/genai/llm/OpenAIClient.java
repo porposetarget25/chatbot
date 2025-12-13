@@ -144,7 +144,7 @@ public class OpenAIClient {
                 "model", "gpt-4o-mini-tts",
                 "input", text,
                 "voice", voice,
-                "format", "mp3",
+                "format", "wav",
                 "instructions", instructions
         );
 

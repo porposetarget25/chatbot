@@ -1,5 +1,7 @@
 package com.example.genai.service;
 
+import org.springframework.stereotype.Service;
+
 import javax.sound.sampled.*;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -8,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 
+@Service
 public class AudioMixService {
 
     // Background music volume relative to speech
