@@ -1,19 +1,16 @@
 package com.example.genai.controller;
 
+import com.example.genai.component.ChatMemoryStore;
 import com.example.genai.llm.LLMResult;
 import com.example.genai.llm.OpenAIClient;
-import com.example.genai.llm.OllamaClient;
-import com.example.genai.rag.EmbeddingStore;
-import com.example.genai.rag.TextChunk;
-import jakarta.validation.constraints.NotBlank;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationContext;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.*;
 
 @RestController
@@ -21,86 +18,106 @@ import java.util.*;
 @Validated
 public class ChatController {
 
-    private final ApplicationContext ctx;
-    private final EmbeddingStore store = new EmbeddingStore();
+    private final OpenAIClient client;
+    private final ChatMemoryStore memoryStore;
 
     @Autowired
-    public ChatController(ApplicationContext ctx) { this.ctx = ctx; }
+    public ChatController(OpenAIClient client, ChatMemoryStore memoryStore) {
+        this.client = client;
+        this.memoryStore = memoryStore;
+    }
 
+    /**
+     * SINGLE CHAT (unchanged behaviour: request -> answer)
+     * Keeps your existing endpoint working.
+     */
     @PostMapping("/chat")
     public Map<String, Object> chat(@RequestBody ChatRequest req) {
         String system = Optional.ofNullable(req.system())
                 .orElse("You are a helpful Java assistant.");
         String user = req.prompt();
 
-        OpenAIClient client = ctx.getBean(OpenAIClient.class);
+        // Pass only the user message; chatOnce() will inject the system message.
         var msgs = List.of(
-                Map.of("role", "system", "content", system),
                 Map.of("role", "user", "content", user)
         );
 
-        LLMResult answer = client.chatOnce(system, msgs)
-                .block(); // OK for your batch / basic use case
+        LLMResult answer = client.chatOnce(system, msgs).block();
 
-        return Map.of("answer", answer.getContent());
+        return Map.of("answer", answer != null ? answer.getContent() : "");
     }
 
-
-
-    /*@CrossOrigin(origins = "*")
+    /**
+     * STREAMING INTERACTIVE CHAT (SSE)
+     * - Loads conversation history by sessionId
+     * - Appends the new user message immediately
+     * - Streams assistant tokens back as SSE
+     * - Saves final assistant response in memory store at completion
+     */
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> chatStream(@RequestBody ChatRequest req) {
+    public Flux<ServerSentEvent<String>> chatStream(@RequestBody ChatRequest req) {
+
+        String sessionId = Optional.ofNullable(req.sessionId()).orElse("default");
         String system = Optional.ofNullable(req.system()).orElse("You are a helpful Java assistant.");
         String user = req.prompt();
 
-        if (ctx.containsBean("openAIClient")) {
-            var client = ctx.getBean(OpenAIClient.class);
-            List<Map<String,String>> msgs = List.of(
-                    Map.of("role", "system", "content", system),
-                    Map.of("role", "user", "content", user)
-            );
-            return client.chatStream(system, msgs);
-        } else {
-            var client = ctx.getBean(OllamaClient.class);
-            return client.chatStream(system, user);
-        }
+        // 1) Build messages: system + history + user
+        List<Map<String, String>> history = memoryStore.get(sessionId);
+
+        List<Map<String, String>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "system", "content", system));
+        messages.addAll(history);
+        messages.add(Map.of("role", "user", "content", user));
+
+        // 2) Persist user message immediately
+        memoryStore.append(sessionId, Map.of("role", "user", "content", user));
+
+        // 3) Buffer assistant response so we can store it at the end
+        StringBuilder assistantBuffer = new StringBuilder();
+
+        Flux<ServerSentEvent<String>> tokenEvents =
+                client.chatStream(system, messages)
+                        .doOnNext(tok -> assistantBuffer.append(tok))
+                        .map(tok -> ServerSentEvent.builder(tok).event("token").build())
+                        .doOnError(e -> {
+                            // emit an SSE error event as well
+                            // (client will still see partial tokens if any were emitted)
+                            // log it
+                            System.out.println("chatStream error: " + e.getMessage());
+                        })
+                        .doFinally(sig -> {
+                            String assistant = assistantBuffer.toString().trim();
+                            if (!assistant.isBlank()) {
+                                memoryStore.append(sessionId, Map.of("role", "assistant", "content", assistant));
+                            }
+                        });
+
+        // Optional keep-alive (helps with proxies/timeouts)
+        Flux<ServerSentEvent<String>> keepAlive =
+                Flux.interval(Duration.ofSeconds(15))
+                        .map(i -> ServerSentEvent.<String>builder("")
+                                .comment("keep-alive")
+                                .build());
+
+        // Optional first event so clients immediately see something
+        Flux<ServerSentEvent<String>> start =
+                Flux.just(ServerSentEvent.builder("connected").event("status").build());
+
+        return Flux.merge(start, keepAlive, tokenEvents)
+                .concatWith(Flux.defer(() -> Flux.just(
+                        ServerSentEvent.builder(assistantBuffer.toString().trim())
+                                .event("message")
+                                .build()
+                )))
+                .concatWith(Flux.just(ServerSentEvent.builder("[DONE]").event("done").build()));
     }
 
-    @PostMapping("/rag/upsert")
-    public Mono<Map<String, Object>> upsert(@RequestBody RagUpsert req) {
-        if (ctx.containsBean("openAIClient")) {
-            var client = ctx.getBean(OpenAIClient.class);
-            return client.embed(req.text()).map(vec -> {
-                store.upsert(new TextChunk(req.id(), req.text(), vec));
-                return Map.of("ok", true);
-            });
-        }
-        return Mono.just(Map.of("ok", false, "reason", "Embeddings not wired for this profile"));
+    // Optional: reset a conversation
+    @DeleteMapping("/chat/{sessionId}")
+    public Map<String, Object> reset(@PathVariable String sessionId) {
+        memoryStore.clear(sessionId);
+        return Map.of("status", "cleared", "sessionId", sessionId);
     }
 
-    @PostMapping("/rag/query")
-    public Mono<Map<String, Object>> ragQuery(@RequestBody RagQuery req) {
-        String prompt = req.prompt();
-        int k = Optional.ofNullable(req.k()).orElse(3);
-        if (ctx.containsBean("openAIClient")) {
-            var client = ctx.getBean(OpenAIClient.class);
-            return client.embed(prompt).flatMap(vec -> {
-                var top = store.topK(vec, k);
-                String context = top.stream().map(TextChunk::text).reduce("", (a,b) -> a + "\n---\n" + b);
-                var messages = List.of(
-                        Map.of("role","system","content","Use the provided context to answer. If unsure, say you don't know."),
-                        Map.of("role","user","content","Context:\n" + context + "\n\nQuestion: " + prompt)
-                );
-                return client.chatOnce(null, messages).map(answer -> Map.of(
-                        "answer", answer,
-                        "sources", top.stream().map(TextChunk::id).toList()
-                ));
-            });
-        }
-        return Mono.just(Map.of("answer","Embeddings not wired for this profile"));
-    }*/
-
-    public record ChatRequest(@NotBlank String prompt, String system) {}
-    public record RagUpsert(@NotBlank String id, @NotBlank String text) {}
-    public record RagQuery(@NotBlank String prompt, Integer k) {}
+    public record ChatRequest(String sessionId, String system, String prompt) {}
 }

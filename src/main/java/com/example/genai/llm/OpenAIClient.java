@@ -1,13 +1,16 @@
 package com.example.genai.llm;
 
+import com.example.genai.util.StreamJsonParsers;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.core.io.buffer.DataBuffer;
+import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import io.netty.handler.ssl.SslContext;
@@ -15,8 +18,9 @@ import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import reactor.netty.http.client.HttpClient;
 
-import java.util.List;
-import java.util.Map;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Component
 @Profile("openai")
@@ -57,20 +61,14 @@ public class OpenAIClient {
         ReactorClientHttpConnector insecureConnector =
                 new ReactorClientHttpConnector(nettyClient);
 
-        // Normal JSON WebClient (chat, embeddings)
         this.http = WebClient.builder()
                 .baseUrl(apiBase)
                 .clientConnector(insecureConnector)
                 .build();
 
-        // Audio WebClient with larger buffer for MP3
-        ExchangeStrategies bigBuffer = ExchangeStrategies.builder()
-                .codecs(c -> c.defaultCodecs().maxInMemorySize(16 * 1024 * 1024)) // 16 MB
-                .build();
-
+        // If you still need the larger buffer for audio, keep your existing audio client setup.
         this.audioHttp = WebClient.builder()
                 .baseUrl(apiBase)
-                .exchangeStrategies(bigBuffer)
                 .clientConnector(insecureConnector)
                 .build();
     }
@@ -79,11 +77,13 @@ public class OpenAIClient {
 
     public Mono<LLMResult> chatOnce(String system, List<Map<String, String>> messages) {
 
-        var msgList = new java.util.ArrayList<Map<String, String>>(
-                messages == null ? java.util.List.of() : messages
-        );
+        var msgList = new ArrayList<Map<String, String>>(messages == null ? List.of() : messages);
+
+        // Ensure system is at the beginning only once
         if (system != null && !system.isBlank()) {
-            msgList.add(0, Map.of("role", "system", "content", system));
+            if (msgList.isEmpty() || !"system".equals(msgList.get(0).get("role"))) {
+                msgList.add(0, Map.of("role", "system", "content", system));
+            }
         }
 
         Map<String, Object> payload = Map.of(
@@ -100,7 +100,6 @@ public class OpenAIClient {
                 .retrieve()
                 .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
                 .map(res -> {
-                    // ---- token usage ----
                     int promptTokens = 0;
                     int completionTokens = 0;
 
@@ -110,7 +109,6 @@ public class OpenAIClient {
                         completionTokens = safeInt(usage.get("completion_tokens"));
                     }
 
-                    // ---- content ----
                     Object choicesObj = res.get("choices");
                     if (!(choicesObj instanceof List<?> choices) || choices.isEmpty()) {
                         return new LLMResult("", promptTokens, completionTokens);
@@ -129,11 +127,94 @@ public class OpenAIClient {
                         content = c == null ? "" : c.toString();
                     }
 
-                    // clean newlines
                     content = content.replaceAll("\\s*\\n+\\s*", " ").trim();
-
                     return new LLMResult(content, promptTokens, completionTokens);
                 });
+    }
+
+    // ---------- CHAT STREAM (SSE tokens) ----------
+
+    /**
+     * Streams assistant tokens as Flux<String>.
+     * Robust SSE parsing using DataBuffer + "\n\n" event boundary.
+     */
+    public Flux<String> chatStream(String system, List<Map<String, String>> messages) {
+
+        var msgList = new ArrayList<Map<String, String>>(messages == null ? List.of() : messages);
+
+        // Ensure system is at the beginning only once
+        if (system != null && !system.isBlank()) {
+            if (msgList.isEmpty() || !"system".equals(msgList.get(0).get("role"))) {
+                msgList.add(0, Map.of("role", "system", "content", system));
+            }
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("model", chatModel);
+        payload.put("messages", msgList);
+        payload.put("temperature", 0.2);
+        payload.put("stream", true);
+
+        // Buffer for partial SSE frames
+        AtomicReference<StringBuilder> bufferRef = new AtomicReference<>(new StringBuilder());
+
+        return http.post()
+                .uri("/chat/completions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .headers(h -> h.setBearerAuth(apiKey))
+                .bodyValue(payload)
+                .retrieve()
+                .bodyToFlux(DataBuffer.class)
+                .flatMap(db -> {
+                    byte[] bytes = new byte[db.readableByteCount()];
+                    db.read(bytes);
+                    DataBufferUtils.release(db);
+
+                    String chunk = new String(bytes, StandardCharsets.UTF_8);
+
+                    StringBuilder buf = bufferRef.get();
+                    buf.append(chunk);
+
+                    List<String> out = new ArrayList<>();
+
+                    // SSE events are separated by a blank line: "\n\n"
+                    int idx;
+                    while ((idx = buf.indexOf("\n\n")) >= 0) {
+                        String eventBlock = buf.substring(0, idx);
+                        buf.delete(0, idx + 2);
+
+                        // Each event block can have multiple lines.
+                        for (String line : eventBlock.split("\\r?\\n")) {
+                            line = line.trim();
+                            if (!line.startsWith("data:")) continue;
+
+                            String data = line.substring("data:".length()).trim();
+                            if (data.equals("[DONE]")) continue;
+
+                            // Use your existing parser: returns list of token strings
+                            List<String> tokens = StreamJsonParsers.extractDeltaContent(data);
+                            if (tokens != null && !tokens.isEmpty()) {
+                                out.addAll(tokens);
+                            }
+                        }
+                    }
+
+                    return Flux.fromIterable(out);
+                })
+                .filter(s -> s != null && !s.isBlank());
+    }
+
+    // ---------- helpers ----------
+
+    private int safeInt(Object value) {
+        if (value == null) return 0;
+        if (value instanceof Number num) return num.intValue();
+        if (value instanceof String s) {
+            try { return Integer.parseInt(s.trim()); }
+            catch (NumberFormatException ignored) {}
+        }
+        return 0;
     }
 
     // ---------- TEXT → SPEECH (MP3) ----------
@@ -166,21 +247,5 @@ public class OpenAIClient {
 
                     return new TtsResult(bytes, promptTokens, completionTokens);
                 });
-    }
-
-    // ---------- helpers ----------
-
-    private int safeInt(Object value) {
-        if (value == null) return 0;
-        if (value instanceof Number num) {
-            return num.intValue();
-        }
-        if (value instanceof String s) {
-            try {
-                return Integer.parseInt(s.trim());
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return 0;
     }
 }
