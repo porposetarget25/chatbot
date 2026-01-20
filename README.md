@@ -1,4 +1,6 @@
 # java-genai-llm-starter
+backend is in master branch
+Frontend is in main branch
 
 Minimal Spring Boot Java starter for LLM chat, streaming, and tiny RAG.
 
