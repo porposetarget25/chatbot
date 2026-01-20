@@ -120,12 +120,12 @@ public class ChatController {
     }
 
 
-    // Optional: reset a conversation
     @DeleteMapping("/chat/{sessionId}")
-    public Map<String, Object> reset(@PathVariable String sessionId) {
+    public Map<String, Object> reset(@PathVariable("sessionId") String sessionId) {
         memoryStore.clear(sessionId);
         return Map.of("status", "cleared", "sessionId", sessionId);
     }
+
 
     public record ChatRequest(String sessionId, String system, String prompt) {}
 }

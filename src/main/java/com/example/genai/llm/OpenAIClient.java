@@ -140,70 +140,91 @@ public class OpenAIClient {
      */
     public Flux<String> chatStream(String system, List<Map<String, String>> messages) {
 
-        var msgList = new ArrayList<Map<String, String>>(messages == null ? List.of() : messages);
+        return Flux.defer(() -> {
+            var msgList = new ArrayList<Map<String, String>>(messages == null ? List.of() : messages);
 
-        // Ensure system is at the beginning only once
-        if (system != null && !system.isBlank()) {
-            if (msgList.isEmpty() || !"system".equals(msgList.get(0).get("role"))) {
-                msgList.add(0, Map.of("role", "system", "content", system));
+            // Ensure system is at the beginning only once
+            if (system != null && !system.isBlank()) {
+                if (msgList.isEmpty() || !"system".equals(msgList.get(0).get("role"))) {
+                    msgList.add(0, Map.of("role", "system", "content", system));
+                }
             }
-        }
 
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("model", chatModel);
-        payload.put("messages", msgList);
-        payload.put("temperature", 0.2);
-        payload.put("stream", true);
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("model", chatModel);
+            payload.put("messages", msgList);
+            payload.put("temperature", 0.2);
+            payload.put("stream", true);
 
-        // Buffer for partial SSE frames
-        AtomicReference<StringBuilder> bufferRef = new AtomicReference<>(new StringBuilder());
+            // IMPORTANT: buffer must be per-subscription and processed sequentially
+            final StringBuilder buf = new StringBuilder();
 
-        return http.post()
-                .uri("/chat/completions")
-                .contentType(MediaType.APPLICATION_JSON)
-                .accept(MediaType.TEXT_EVENT_STREAM)
-                .headers(h -> h.setBearerAuth(apiKey))
-                .bodyValue(payload)
-                .retrieve()
-                .bodyToFlux(DataBuffer.class)
-                .flatMap(db -> {
-                    byte[] bytes = new byte[db.readableByteCount()];
-                    db.read(bytes);
-                    DataBufferUtils.release(db);
+            return http.post()
+                    .uri("/chat/completions")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.TEXT_EVENT_STREAM)
+                    .headers(h -> h.setBearerAuth(apiKey))
+                    .bodyValue(payload)
+                    .retrieve()
+                    .bodyToFlux(DataBuffer.class)
 
-                    String chunk = new String(bytes, StandardCharsets.UTF_8);
+                    // CRITICAL: concatMap ensures sequential processing (no concurrent delete/append)
+                    .concatMap(db -> {
+                        try {
+                            byte[] bytes = new byte[db.readableByteCount()];
+                            db.read(bytes);
+                            String chunk = new String(bytes, StandardCharsets.UTF_8);
 
-                    StringBuilder buf = bufferRef.get();
-                    buf.append(chunk);
+                            buf.append(chunk);
 
-                    List<String> out = new ArrayList<>();
+                            List<String> out = new ArrayList<>();
 
-                    // SSE events are separated by a blank line: "\n\n"
-                    int idx;
-                    while ((idx = buf.indexOf("\n\n")) >= 0) {
-                        String eventBlock = buf.substring(0, idx);
-                        buf.delete(0, idx + 2);
+                            while (true) {
+                                int idxLfLf = buf.indexOf("\n\n");
+                                int idxCrLfCrLf = buf.indexOf("\r\n\r\n");
 
-                        // Each event block can have multiple lines.
-                        for (String line : eventBlock.split("\\r?\\n")) {
-                            line = line.trim();
-                            if (!line.startsWith("data:")) continue;
+                                int idx;
+                                int delimLen;
 
-                            String data = line.substring("data:".length()).trim();
-                            if (data.equals("[DONE]")) continue;
+                                if (idxLfLf >= 0 && (idxCrLfCrLf < 0 || idxLfLf < idxCrLfCrLf)) {
+                                    idx = idxLfLf;
+                                    delimLen = 2;
+                                } else if (idxCrLfCrLf >= 0) {
+                                    idx = idxCrLfCrLf;
+                                    delimLen = 4;
+                                } else {
+                                    break; // no complete SSE event yet
+                                }
 
-                            // Use your existing parser: returns list of token strings
-                            List<String> tokens = StreamJsonParsers.extractDeltaContent(data);
-                            if (tokens != null && !tokens.isEmpty()) {
-                                out.addAll(tokens);
+                                String eventBlock = buf.substring(0, idx);
+                                buf.delete(0, idx + delimLen);
+
+                                // Parse SSE lines
+                                for (String line : eventBlock.split("\\r?\\n")) {
+                                    line = line.trim();
+                                    if (!line.startsWith("data:")) continue;
+
+                                    String data = line.substring("data:".length()).trim();
+                                    if (data.isEmpty() || "[DONE]".equals(data)) continue;
+
+                                    // Your parser: should extract delta content tokens
+                                    List<String> tokens = StreamJsonParsers.extractDeltaContent(data);
+                                    if (tokens != null && !tokens.isEmpty()) {
+                                        out.addAll(tokens);
+                                    }
+                                }
                             }
-                        }
-                    }
 
-                    return Flux.fromIterable(out);
-                })
-                .filter(s -> s != null && !s.isBlank());
+                            return Flux.fromIterable(out);
+
+                        } finally {
+                            DataBufferUtils.release(db);
+                        }
+                    })
+                    .filter(s -> s != null && !s.isBlank());
+        });
     }
+
 
     // ---------- helpers ----------
 
