@@ -13,6 +13,7 @@ import reactor.core.publisher.Flux;
 import java.time.Duration;
 import java.util.*;
 
+@CrossOrigin(origins = "http://localhost:5173")
 @RestController
 @RequestMapping("/api")
 @Validated
@@ -75,14 +76,15 @@ public class ChatController {
         // 3) Buffer assistant response so we can store it at the end
         StringBuilder assistantBuffer = new StringBuilder();
 
+        // CHANGE: buffer tokens into larger chunks for smoother UI
         Flux<ServerSentEvent<String>> tokenEvents =
                 client.chatStream(system, messages)
-                        .doOnNext(tok -> assistantBuffer.append(tok))
-                        .map(tok -> ServerSentEvent.builder(tok).event("token").build())
+                        .bufferTimeout(50, Duration.ofMillis(200))     // up to 50 tokens or 200ms
+                        .map(list -> String.join("", list))            // join tokens into one chunk
+                        .filter(chunk -> chunk != null && !chunk.isBlank())
+                        .doOnNext(chunk -> assistantBuffer.append(chunk))
+                        .map(chunk -> ServerSentEvent.builder(chunk).event("token").build())
                         .doOnError(e -> {
-                            // emit an SSE error event as well
-                            // (client will still see partial tokens if any were emitted)
-                            // log it
                             System.out.println("chatStream error: " + e.getMessage());
                         })
                         .doFinally(sig -> {
@@ -97,20 +99,26 @@ public class ChatController {
                 Flux.interval(Duration.ofSeconds(15))
                         .map(i -> ServerSentEvent.<String>builder("")
                                 .comment("keep-alive")
-                                .build());
+                                .build())
+                        // 🔑 stop keep-alive when token stream completes
+                        .takeUntilOther(tokenEvents.ignoreElements());
 
         // Optional first event so clients immediately see something
         Flux<ServerSentEvent<String>> start =
                 Flux.just(ServerSentEvent.builder("connected").event("status").build());
 
-        return Flux.merge(start, keepAlive, tokenEvents)
-                .concatWith(Flux.defer(() -> Flux.just(
+        return Flux.concat(
+                start,
+                Flux.merge(tokenEvents, keepAlive),
+                Flux.defer(() -> Flux.just(
                         ServerSentEvent.builder(assistantBuffer.toString().trim())
                                 .event("message")
                                 .build()
-                )))
-                .concatWith(Flux.just(ServerSentEvent.builder("[DONE]").event("done").build()));
+                )),
+                Flux.just(ServerSentEvent.builder("[DONE]").event("done").build())
+        );
     }
+
 
     // Optional: reset a conversation
     @DeleteMapping("/chat/{sessionId}")
